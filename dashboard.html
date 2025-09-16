@@ -1,0 +1,726 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Platform Overview</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 24px; }
+    .header { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;}
+    .controls { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+    .card { border:1px solid #e5e7eb; border-radius:12px; padding:16px; margin-bottom:16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+    table { width:100%; border-collapse: collapse; }
+    th, td { padding:10px; border-bottom:1px solid #eee; text-align:left; }
+    .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-weight:600; font-size:12px; }
+    .plan-A { background:#e0f2fe; } .plan-B { background:#e2fbe8; } .plan-C { background:#fde68a; }
+    .muted { color:#6b7280; font-size:12px; }
+
+    .charts-row{ display:grid; grid-template-columns:1fr; column-gap:40px; row-gap:32px; }
+    @media (min-width:1200px){ .charts-row{ grid-template-columns:1fr 1fr 1fr; } }
+
+    .chart-box{ position:relative; width:100%; height:260px; border:1px solid #eee; border-radius:8px; padding:12px; }
+    .chart-box>canvas{ width:100% !important; height:100% !important; display:block; }
+
+    input[type="number"]{ width:110px; }
+    .actions{ display:flex; gap:8px; flex-wrap:wrap; }
+    .aua-btn,.div-btn{ padding:6px 10px; border:1px solid #e5e7eb; border-radius:8px; background:#fff; cursor:pointer; }
+    .aua-btn.active,.div-btn.active{ background:#111827; color:#fff; border-color:#111827; }
+
+    .u-plan-btn{ padding:6px 10px; border:1px solid #e5e7eb; border-radius:8px; background:#fff; cursor:pointer; }
+    .u-plan-btn.active{ background:#111827; color:#fff; border-color:#111827; }
+    #usersTbl thead th{ position:sticky; top:0; background:#fff; z-index:1; }
+
+    .kpi-grid{ display:grid; grid-template-columns:1fr; gap:12px; }
+    .kpi{ border:1px solid #eee; border-radius:8px; padding:10px; }
+    .kpi h4{ margin:0 0 6px 0; font-size:14px; color:#374151; }
+    .kpi .big{ font-size:20px; font-weight:700; }
+    .kpi small{ color:#6b7280; }
+    @media (min-width:1200px){ .kpi-grid{ grid-template-columns:repeat(4,1fr); } }
+
+    .metrics-row{ display:grid; grid-template-columns:1fr; gap:24px; }
+    @media (min-width:1200px){ .metrics-row{ grid-template-columns:1fr 1fr 1fr; } }
+    .metrics-box{ border:1px solid #eee; border-radius:8px; padding:12px; height:260px; }
+    .metrics-box canvas{ width:100% !important; height:100% !important; display:block; }
+
+    /* Funds table */
+    #fundsTbl{ width:100%; border-collapse:collapse; }
+    #fundsTbl th,#fundsTbl td{ padding:10px; border-bottom:1px solid #eee; text-align:left; }
+    #fundsTbl input[type="number"]{ width:110px; }
+    .note{ color:#6b7280; font-size:12px; }
+
+    /* Revenue Panel */
+    .rp-row{ display:grid; grid-template-columns:1fr; gap:24px; }
+    @media (min-width:1200px){ .rp-row{ grid-template-columns:1fr 1fr; } }
+    .rp-box{ border:1px solid #eee; border-radius:8px; padding:12px; }
+    .rp-box canvas{ width:100% !important; height:220px !important; display:block; }
+    .rp-toolbar{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; position:relative; z-index:2; }
+    .rp-btn, .rp-plan-btn{ padding:6px 10px; border:1px solid #e5e7eb; border-radius:8px; background:#fff; cursor:pointer; user-select:none; }
+    .rp-btn.active, .rp-plan-btn.active{ background:#111827; color:#fff; border-color:#111827; }
+    .rp-summary{ border:1px solid #eee; border-radius:8px; padding:10px; margin-bottom:12px; }
+    .rp-summary h4{ margin:0 0 6px 0; font-size:14px; color:#374151; }
+    .rp-summary .big{ font-size:20px; font-weight:700; }
+
+    /* Continuation rows hint */
+    #distTbl tbody tr.is-continuation td:nth-child(-n+3){ background:#fafafa; color:#6b7280; }
+    #usersTbl tbody tr.is-continuation td:nth-child(-n+2){ background:#fafafa; color:#6b7280; }
+    button[disabled]{ opacity:.5; cursor:not-allowed; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Platform Overview</h1>
+    <div class="muted" id="liveStatus">Live: <strong>connected</strong></div>
+  </div>
+
+  <!-- ===== Top 3 cards (with unified time toolbar) ===== -->
+  <div class="card">
+    <div class="rp-toolbar" id="topRowToolbar" style="margin-bottom:8px;">
+      <button type="button" class="rp-btn tr-btn" data-mode="day">Daily</button>
+      <button type="button" class="rp-btn tr-btn" data-mode="week">Weekly</button>
+      <button type="button" class="rp-btn tr-btn active" data-mode="month">Monthly</button>
+      <button type="button" class="rp-btn tr-btn" data-mode="year">Yearly</button>
+      <button type="button" class="rp-btn tr-btn" data-mode="since">Since inception</button>
+      <span class="muted">Custom:</span>
+      <input type="date" id="trStart"> —
+      <input type="date" id="trEnd">
+      <button type="button" class="rp-btn" id="trApply">Apply</button>
+    </div>
+
+    <div class="charts-row">
+      <div>
+        <h3 style="margin:0;">AuA by Strategy</h3>
+        <div class="chart-box"><canvas id="capitalPie"></canvas></div>
+        <div id="capitalTotals" class="muted" style="margin-top:6px;"></div>
+      </div>
+
+      <div>
+        <div style="display:flex;align-items:center;gap:12px; margin-bottom:8px;">
+          <h3 style="margin:0;">Diversification Overview</h3>
+          <div class="controls" style="margin:0;">
+            <button type="button" class="div-btn active" data-dim="plan">Plan</button>
+            <button type="button" class="div-btn" data-dim="asset_class">Asset class</button>
+            <button type="button" class="div-btn" data-dim="strategy">Strategy</button>
+            <button type="button" class="div-btn" data-dim="gp">GPs (Funds)</button>
+          </div>
+        </div>
+        <div class="chart-box"><canvas id="diversChart"></canvas></div>
+        <div class="muted" id="diversInfo" style="margin-top:6px;"></div>
+      </div>
+
+      <div>
+        <h3 style="margin:0;">Subscriptions & Redemptions Overview</h3>
+        <div class="chart-box"><canvas id="subsRedChart"></canvas></div>
+        <div class="muted" id="rangeLabel" style="margin-top:6px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Key Metrics ===== -->
+  <div class="card" id="keyMetricsCard">
+    <h3 style="margin:0 0 8px 0;">Key Metrics</h3>
+    <div class="kpi-grid" style="margin-bottom:12px;">
+      <div class="kpi"><h4>AUM (total)</h4><div class="big" id="kpiAumTotal">–</div><small>Growth (total): <span id="kpiAumGrowth">–</span></small></div>
+      <div class="kpi"><h4>Liquidity</h4><div class="big" id="kpiRedemption">–</div><small>Redemption requests (% in range)</small></div>
+      <div class="kpi"><h4>Cash on hand</h4><div class="big" id="kpiCash">–</div><small>as per allocations</small></div>
+      <div class="kpi">
+        <h4>User funnel</h4>
+        <div class="big"><span id="kpiSignup">0</span> → <span id="kpiKyc">0</span> → <span id="kpiFunded">0</span> → <span id="kpiCommitted">0</span></div>
+        <small>KYC from signup: <span id="kpiKycRate">–</span> • Funded from KYC: <span id="kpiFundedRate">–</span> • Commit from funded: <span id="kpiCommitRate">–</span></small>
+      </div>
+    </div>
+    <div class="metrics-row">
+      <div><div class="muted" style="margin-bottom:6px;">Growth by plan (%)</div><div class="metrics-box"><canvas id="chartGrowth"></canvas></div></div>
+      <div><div class="muted" style="margin-bottom:6px;">Gross vs Net IRR by plan (%)</div><div class="metrics-box"><canvas id="chartIRR"></canvas></div></div>
+      <div><div class="muted" style="margin-bottom:6px;">Deployment rate by plan (%)</div><div class="metrics-box"><canvas id="chartDeploy"></canvas></div></div>
+    </div>
+  </div>
+
+  <!-- ===== USERS ===== -->
+  <div class="card" id="usersCard">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+      <h3 style="margin:0;">Users</h3>
+      <div id="usersBadges" class="muted"></div>
+    </div>
+    <div class="controls" style="margin-top:8px;">
+      <input id="userSearch" type="search" placeholder="Search name…" style="min-width:220px;">
+      <div class="actions">
+        <button type="button" class="u-plan-btn active" data-plan="ALL">All</button>
+        <button type="button" class="u-plan-btn" data-plan="A">Smart Yield (A)</button>
+        <button type="button" class="u-plan-btn" data-plan="B">Premium (B)</button>
+        <button type="button" class="u-plan-btn" data-plan="C">Platinum (C)</button>
+      </div>
+      <label>Sort:
+        <select id="userSort">
+          <option value="newest">Newest</option>
+          <option value="oldest">Oldest</option>
+          <option value="name">Name A→Z</option>
+        </select>
+      </label>
+      <label>Rows:
+        <select id="userPerPage">
+          <option value="10" selected>10</option>
+          <option value="25">25</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+        </select>
+      </label>
+    </div>
+    <div style="overflow:auto; max-height:420px;">
+      <table id="usersTbl">
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th>Full Name</th>
+            <th>Plan ID</th>
+            <th>Plan</th>
+            <th>Deposited Amount</th>
+            <th>Currency</th>
+            <th>Date</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="controls" style="justify-content:space-between;">
+      <div class="muted" id="usersInfo"></div>
+      <div class="actions">
+        <button type="button" id="usersPrev">◀</button>
+        <span id="usersPageLabel" class="muted"></span>
+        <button type="button" id="usersNext">▶</button>
+        <<button type="button" id="usersExport" class="aua-btn">Export CSV</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== FUNDS ===== -->
+  <div class="card" id="fundsCard">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+      <h3 style="margin:0;">Fund Returns & Track Record</h3>
+      <div class="controls" style="margin:0;">
+        <label>Month: <input type="month" id="fundsMonth"></label>
+        <button type="button" id="fundsExport" class="aua-btn">Export CSV</button>
+      </div>
+    </div>
+    <div class="note" style="margin:6px 0;">
+      Enter the <strong>monthly return %</strong> for each fund. The <em>implied weekly</em> uses compounding: (1+m)<sup>1/4.345</sup> − 1.
+      Monthly values are saved locally to compute LTM (12M) and L18M.
+    </div>
+    <div style="overflow:auto; max-height:420px;">
+      <table id="fundsTbl">
+        <thead>
+          <tr>
+            <th>Fund</th><th>AuM</th><th>Monthly return (%)</th><th>Implied weekly (%)</th><th>LTM (%)</th><th>L18M (%)</th><th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ===== RETURNS & DISTRIBUTION ===== -->
+  <div class="card">
+    <h3>Monthly Returns & Distribution</h3>
+    <div class="controls">
+      <label>Month: <input type="month" id="retMonth"></label>
+      <label>Total return (€): <input type="number" id="retTotal" step="0.01" min="0" value="0"></label>
+    </div>
+    <div class="controls">
+      <strong>Allocation by plan:</strong>
+      <label>A (%) <input type="number" id="retA" step="0.01" min="0" value="40"></label>
+      <label>B (%) <input type="number" id="retB" step="0.01" min="0" value="35"></label>
+      <label>C (%) <input type="number" id="retC" step="0.01" min="0" value="25"></label>
+      <div class="actions">
+        <button type="button" id="saveReturns">Save allocation</button>
+        <button type="button" id="calcDistribution">Compute distribution</button>
+      </div>
+    </div>
+    <div id="planPools" class="muted" style="margin-bottom:8px;"></div>
+    <div class="muted" id="retInfo" style="margin-bottom:8px;"></div>
+
+    <h4>Distribution for selected month</h4>
+    <table id="distTbl">
+      <thead>
+        <tr>
+          <th>Code</th>
+          <th>Full Name</th>
+          <th>Plan ID</th>
+          <th>Plan</th>
+          <th>Deposited Amount</th>
+          <th>Currency</th>
+          <th>% profit</th>
+          <th>Deposited Amount + Profit</th>
+          <th>Gross Profit</th>
+          <th>Kleos Revenue (20%)</th>
+          <th>Net Profit</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <!-- ===== REVENUE PANEL ===== -->
+  <div class="card" id="revenuePanelCard">
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+      <h3 id="revenuePanelTitle" style="margin:0;">Revenue Panel</h3>
+      <div class="rp-toolbar">
+        <button type="button" class="rp-btn" data-mode="day">Daily</button>
+        <button type="button" class="rp-btn" data-mode="week">Weekly</button>
+        <button type="button" class="rp-btn active" data-mode="month">Monthly</button>
+        <button type="button" class="rp-btn" data-mode="year">Yearly</button>
+        <button type="button" class="rp-btn" data-mode="since">Since inception</button>
+        <span class="muted">Custom:</span>
+        <input type="date" id="rpStart"> —
+        <input type="date" id="rpEnd">
+        <button type="button" class="rp-btn" id="rpApply">Apply</button>
+      </div>
+    </div>
+
+    <div class="rp-summary">
+      <h4 id="rpTotalLabel">Total revenue + Transaction Fees</h4>
+      <div class="big" id="rpTotalVal">–</div>
+      <small class="muted" id="rpRangeLabel"></small>
+    </div>
+
+    <div class="rp-row">
+      <div class="rp-box">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:12px; flex-wrap:wrap;">
+          <div><strong>Investments Revenue</strong></div>
+          <div class="rp-toolbar" style="margin:0;">
+            <button type="button" class="rp-plan-btn active" data-plan="A">Smart Yield</button>
+            <button type="button" class="rp-plan-btn active" data-plan="B">Premium</button>
+            <button type="button" class="rp-plan-btn active" data-plan="C">Platinum</button>
+          </div>
+        </div>
+        <canvas id="rpInvChart"></canvas>
+        <div class="muted" style="margin-top:6px;">Total for period: <strong id="rpInvTotal">–</strong></div>
+      </div>
+
+      <div class="rp-box">
+        <div><strong>Card Transactions Revenue</strong> <span class="muted">(placeholder)</span></div>
+        <canvas id="rpCardChart"></canvas>
+        <div class="muted" style="margin-top:6px;">Total for period: <strong id="rpCardTotal">–</strong></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+/* ===== Utilities ===== */
+let pie, subsRed, divers;
+let chartGrowth, chartIRR, chartDeploy;
+function euro(v){ return (v||0).toLocaleString('en-GB',{style:'currency',currency:'EUR'}); }
+function chartCfg(base){ return Object.assign(base,{options:{...(base.options||{}),responsive:true,maintainAspectRatio:false}}); }
+function fmtPct2(v){ if(v==null||v==='') return ''; return (Number(v)||0).toFixed(2) + '%'; }
+function fmtPct6(v){ if(v==null||v==='') return ''; return (Number(v)||0).toFixed(6) + '%'; }
+
+/* ===== AUA PIE ===== */
+let auaState = { range: 'custom', start: null, end: null };
+async function loadAua(){
+  const params = new URLSearchParams({ range: auaState.range });
+  if (auaState.range === 'custom' && auaState.start && auaState.end){ params.set('start', auaState.start); params.set('end', auaState.end); }
+  const res = await fetch(`/api/summary?${params}`); const data = await res.json();
+  const a = data.capital_by_plan.A || 0, b = data.capital_by_plan.B || 0, c = data.capital_by_plan.C || 0;
+
+  if (pie) pie.destroy();
+  pie = new Chart(document.getElementById('capitalPie'), chartCfg({
+    type:'doughnut',
+    data:{ labels:['Smart Yield','Premium','Platinum'], datasets:[{ data:[a,b,c] }] },
+    options:{ plugins:{ legend:{position:'bottom'}, tooltip:{ callbacks:{ label:(ctx)=> `${ctx.label}: ${euro(ctx.raw)}` }}} }
+  }));
+  document.getElementById('capitalTotals').innerHTML =
+    `Total AuA: <strong>${euro(data.capital_total||0)}</strong> • Smart Yield: ${euro(a)} • Premium: ${euro(b)} • Platinum: ${euro(c)}`;
+}
+
+/* ===== SUBS/REDEMPTIONS ===== */
+async function loadSubsRed(range='custom', start=null, end=null){
+  const params = new URLSearchParams({ range });
+  if (range === 'custom' && start && end){ params.set('start', start); params.set('end', end); }
+  const res = await fetch(`/api/stats?${params}`); const data = await res.json();
+
+  const labels = data.weekly_flows.map(w=>w.week_start);
+  const plans = ['A','B','C']; const datasets = [];
+  for (const p of plans){
+    const committed = data.weekly_flows.map(w => (w[p]?.committed)||0);
+    const recalled  = data.weekly_flows.map(w => (w[p]?.recalled)||0);
+    datasets.push({ label:`Plan ${p} — Capital Committed`, data:committed, stack:`stack_${p}` });
+    datasets.push({ label:`Plan ${p} — Recalled NAV`, data:recalled, stack:`stack_${p}` });
+  }
+  if (subsRed) subsRed.destroy();
+  subsRed = new Chart(document.getElementById('subsRedChart'), chartCfg({
+    type:'bar',
+    data:{ labels, datasets },
+    options:{ scales:{ x:{ stacked:true }, y:{ beginAtZero:true, stacked:true } },
+      plugins:{ legend:{position:'bottom'}, tooltip:{ callbacks:{ label:(ctx)=> `${ctx.dataset.label}: ${euro(ctx.raw)}` } } } }
+  }));
+
+  document.getElementById('rangeLabel').textContent = `Range: ${data.range.start} → ${data.range.end}`;
+}
+
+/* ===== DIVERSIFICATION ===== */
+let divState = { dim: 'plan' };
+function setDivActive(btn){ document.querySelectorAll('.div-btn[data-dim]').forEach(b=>b.classList.remove('active')); if(btn) btn.classList.add('active'); }
+async function loadDiversification(){
+  const res = await fetch(`/api/diversification?dimension=${encodeURIComponent(divState.dim)}`);
+  const data = await res.json();
+  const labels = data.items.map(x=>x.key);
+  const values = data.items.map(x=>x.value);
+  if (divers) divers.destroy();
+  divers = new Chart(document.getElementById('diversChart'), chartCfg({
+    type:'doughnut',
+    data:{ labels, datasets:[{ data:values }] },
+    options:{ plugins:{ legend:{position:'bottom'}, tooltip:{ callbacks:{ label:(ctx)=> `${ctx.label}: ${euro(ctx.raw)}` }}} }
+  }));
+  document.getElementById('diversInfo').textContent = `Dimension: ${data.dimension} • Total: ${euro(values.reduce((a,b)=>a+b,0))}`;
+}
+document.querySelectorAll('.div-btn[data-dim]').forEach(btn=>btn.addEventListener('click',async()=>{ divState.dim=btn.dataset.dim; setDivActive(btn); await loadDiversification(); }));
+
+/* ===== METRICS ===== */
+async function loadMetrics(range='custom', start=null, end=null){
+  const params = new URLSearchParams({ range });
+  if (range==='custom' && start && end){ params.set('start',start); params.set('end',end); }
+  const res = await fetch(`/api/metrics?${params}`); const data = await res.json();
+
+  const sp = data.strategies_portfolio, aum=sp.aum, liq=sp.liquidity, ue=data.user_engagement;
+  document.getElementById('kpiAumTotal').textContent = euro(aum.total||0);
+  document.getElementById('kpiAumGrowth').textContent = fmtPct2(aum.growth_total_pct||0);
+  document.getElementById('kpiRedemption').textContent = fmtPct2(liq.redemption_rate_pct||0);
+  document.getElementById('kpiCash').textContent = euro(liq.cash_on_hand||0);
+  document.getElementById('kpiSignup').textContent=ue.signup.count||0;
+  document.getElementById('kpiKyc').textContent=ue.kyc.count||0;
+  document.getElementById('kpiFunded').textContent=ue.funded.count||0;
+  document.getElementById('kpiCommitted').textContent=ue.committed.count||0;
+}
+
+/* ===== USERS TABLE — usa /api/users_table ===== */
+const usersState = { plan:null, q:'', sort:'newest', page:1, perPage:10 };
+let usersTotalPages = 1;
+
+function usersSetActivePlan(btn){ document.querySelectorAll('.u-plan-btn').forEach(b=>b.classList.remove('active')); if (btn) btn.classList.add('active'); }
+
+async function loadUsers(){
+  const url = new URL('/api/users_table', location.origin);
+  if (usersState.q) url.searchParams.set('q', usersState.q);
+  if (usersState.plan) url.searchParams.set('plan', usersState.plan);
+  url.searchParams.set('sort', usersState.sort);
+  url.searchParams.set('rows', String(usersState.perPage));
+  url.searchParams.set('page', String(usersState.page));
+
+  const res = await fetch(url); const data = await res.json();
+
+  // Badges
+  const totalUsers = data.total_users || 0;
+  const ca = data.counts_by_plan?.A || 0, cb = data.counts_by_plan?.B || 0, cc = data.counts_by_plan?.C || 0;
+  document.getElementById('usersBadges').innerHTML =
+    `Total users: <strong>${totalUsers}</strong> • <span class="badge plan-A">A: ${ca}</span> <span class="badge plan-B">B: ${cb}</span> <span class="badge plan-C">C: ${cc}</span>`;
+
+  // Righe tabella
+  const tbody = document.querySelector('#usersTbl tbody');
+  tbody.innerHTML = (data.rows||[]).map(r => `
+    <tr class="${r.code ? '' : 'is-continuation'}">
+      <td>${r.code || ''}</td>
+      <td>${r.full_name || ''}</td>
+      <td>${r.plan_id || ''}</td>
+      <td>${r.plan || ''}</td>
+      <td>${euro(r.deposited_amount || 0)}</td>
+      <td>${r.currency || ''}</td>
+      <td>${r.date || ''}</td>
+    </tr>
+  `).join('');
+
+  // Paginazione
+  usersTotalPages = data.total_pages || 1;
+  usersState.page = data.page || 1;
+  document.getElementById('usersPageLabel').textContent = `Page ${usersState.page}/${usersTotalPages}`;
+  document.getElementById('usersPrev').disabled = (usersState.page <= 1);
+  document.getElementById('usersNext').disabled = (usersState.page >= usersTotalPages);
+  document.getElementById('usersInfo').textContent =
+    `Filters → q:“${usersState.q}” • plan:${usersState.plan||'ALL'} • sort:${usersState.sort} • rows:${usersState.perPage}`;
+}
+
+function usersBindControls(){
+  document.querySelectorAll('.u-plan-btn').forEach(btn=>btn.addEventListener('click',async()=>{
+    usersSetActivePlan(btn);
+    usersState.plan = (btn.dataset.plan === 'ALL') ? null : btn.dataset.plan;
+    usersState.page = 1;
+    await loadUsers();
+  }));
+  document.getElementById('userSearch').addEventListener('input', async (e)=>{
+    usersState.q = e.target.value || '';
+    usersState.page = 1;
+    await loadUsers();
+  });
+  document.getElementById('userSort').addEventListener('change', async (e)=>{
+    usersState.sort = e.target.value || 'newest';
+    await loadUsers();
+  });
+  document.getElementById('userPerPage').addEventListener('change', async (e)=>{
+    usersState.perPage = parseInt(e.target.value || '10', 10);
+    usersState.page = 1;
+    await loadUsers();
+  });
+  document.getElementById('usersPrev').addEventListener('click', async ()=>{
+    if (usersState.page > 1){ usersState.page--; await loadUsers(); }
+  });
+  document.getElementById('usersNext').addEventListener('click', async ()=>{
+    if (usersState.page < usersTotalPages){ usersState.page++; await loadUsers(); }
+  });
+  document.getElementById('usersExport').addEventListener('click', ()=>{
+    window.location.href = '/api/users_table/export.csv';
+  });
+}
+
+/* ===== RETURNS & DISTRIBUTION ===== */
+function getSelectedMonth(){
+  const m=document.getElementById('retMonth').value;
+  if(!m){ const now=new Date(); const ym=now.toISOString().slice(0,7); document.getElementById('retMonth').value=ym; return ym; }
+  return m;
+}
+function recalcPlanPoolsUI(){
+  const total=parseFloat(document.getElementById('retTotal').value||0);
+  const A=parseFloat(document.getElementById('retA').value||0), B=parseFloat(document.getElementById('retB').value||0), C=parseFloat(document.getElementById('retC').value||0);
+  const pools={ A: total*A/100, B: total*B/100, C: total*C/100 };
+  document.getElementById('planPools').textContent =
+    `Allocated: Smart Yield ${euro(pools.A)} • Premium ${euro(pools.B)} • Platinum ${euro(pools.C)} (sum: ${euro(pools.A+pools.B+pools.C)})`;
+}
+async function fetchReturns(){
+  const month=getSelectedMonth();
+  const res=await fetch(`/api/returns?month=${encodeURIComponent(month)}`);
+  if(res.ok){
+    const d=await res.json();
+    document.getElementById('retA').value=d.returns.A ?? 0;
+    document.getElementById('retB').value=d.returns.B ?? 0;
+    document.getElementById('retC').value=d.returns.C ?? 0;
+    document.getElementById('retTotal').value=d.total_eur ?? 0;
+    document.getElementById('retInfo').textContent=
+      `Saved for ${d.month}: total ${euro(d.total_eur||0)} | A ${d.returns.A}% • B ${d.returns.B}% • C ${d.returns.C}%`;
+  } else document.getElementById('retInfo').textContent='No data saved.';
+  recalcPlanPoolsUI();
+}
+async function saveReturns(){
+  const month=getSelectedMonth();
+  const total_eur=parseFloat(document.getElementById('retTotal').value||0);
+  const A=parseFloat(document.getElementById('retA').value||0), B=parseFloat(document.getElementById('retB').value||0), C=parseFloat(document.getElementById('retC').value||0);
+  if(Math.abs(A+B+C-100)>0.01){ alert("A + B + C must add up to 100%."); return; }
+  const res=await fetch('/api/returns',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({month,total_eur,A,B,C}) });
+  if(res.ok){ document.getElementById('retInfo').textContent=`Saved allocation for ${month}.`; } else { alert('Save error'); }
+  recalcPlanPoolsUI();
+}
+async function calcDistribution(){
+  const month=getSelectedMonth();
+  const res=await fetch('/api/distribute',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({month}) });
+  if(res.ok){ await loadDistributionTable(); } else { const e=await res.json().catch(()=>({error:'Error'})); alert(e.error||'Error'); }
+}
+async function loadDistributionTable(){
+  const month=getSelectedMonth();
+  const res=await fetch(`/api/distributions?month=${encodeURIComponent(month)}&view=table`);
+  const data=await res.json();
+  const rows = data.rows || [];
+  const tbody=document.querySelector('#distTbl tbody');
+
+  tbody.innerHTML = rows.map(r => `
+    <tr class="${r.code ? '' : 'is-continuation'}">
+      <td>${r.code || ''}</td>
+      <td>${r.full_name || ''}</td>
+      <td>${r.plan_id || ''}</td>
+      <td>${r.plan || ''}</td>
+      <td>${euro(r.deposited_amount || 0)}</td>
+      <td>${r.currency || ''}</td>
+      <td>${fmtPct6(r.pct_profit)}</td>
+      <td>${euro(r.dep_plus_profit || 0)}</td>
+      <td>${euro(r.gross_profit || 0)}</td>
+      <td>${euro(r.kleos_revenue || 0)}</td>
+      <td><strong>${euro(r.net_profit || 0)}</strong></td>
+    </tr>
+  `).join('');
+}
+document.getElementById('saveReturns').addEventListener('click', saveReturns);
+document.getElementById('calcDistribution').addEventListener('click', calcDistribution);
+['retTotal','retA','retB','retC'].forEach(id=>document.getElementById(id).addEventListener('input', recalcPlanPoolsUI));
+document.getElementById('retMonth').addEventListener('change', async ()=>{ await fetchReturns(); await loadDistributionTable(); });
+
+/* ===== REVENUE PANEL ===== */
+let rpInvChart, rpCardChart;
+const rpState = { mode:'month', start:null, end:null, plans:new Set(['A','B','C']) };
+function setRpModeActive(btn){ document.querySelectorAll('.rp-btn[data-mode]').forEach(b=>b.classList.remove('active')); if(btn) btn.classList.add('active'); }
+function togglePlan(btn){
+  const p = btn.dataset.plan;
+  if(rpState.plans.has(p)){ rpState.plans.delete(p); btn.classList.remove('active'); }
+  else{ rpState.plans.add(p); btn.classList.add('active'); }
+  loadRevenuePanel();
+}
+async function loadRevenuePanel(){
+  const params = new URLSearchParams({ mode: rpState.mode });
+  if (rpState.mode === 'custom'){
+    const s=document.getElementById('rpStart').value, e=document.getElementById('rpEnd').value;
+    if (s) params.set('start', s); if (e) params.set('end', e);
+  }
+  if (rpState.plans.size>0 && rpState.plans.size<3){ params.set('plans', Array.from(rpState.plans).join(',')); }
+  const res = await fetch(`/api/revenue_panel?${params.toString()}`);
+  const data = await res.json();
+
+  document.getElementById('rpTotalLabel').textContent = data.summary?.label || 'Total revenue + Transaction Fees';
+  document.getElementById('rpTotalVal').textContent = euro(data.summary?.total_revenue_plus_fees || 0);
+  const groupLabel = ({day:'Daily',week:'Weekly',month:'Monthly',year:'Yearly'})[data.group] || data.group;
+  document.getElementById('rpRangeLabel').textContent = `Range: ${data.start} → ${data.end} • Grouping: ${groupLabel}`;
+
+  const invLabels = (data.investments?.series||[]).map(x=>x.key);
+  const invValues = (data.investments?.series||[]).map(x=>x.value||0);
+  if (rpInvChart) rpInvChart.destroy();
+  rpInvChart = new Chart(document.getElementById('rpInvChart'), chartCfg({
+    type:'bar',
+    data:{ labels:invLabels, datasets:[{ label:'Investments Revenue (20%)', data:invValues }] },
+    options:{ plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ label:(ctx)=> euro(ctx.raw) } } }, scales:{ y:{ beginAtZero:true } } }
+  }));
+  document.getElementById('rpInvTotal').textContent = euro(data.investments?.total || 0);
+
+  const cardLabels = (data.cards?.series||[]).map(x=>x.key);
+  const cardValues = (data.cards?.series||[]).map(x=>x.value||0);
+  if (rpCardChart) rpCardChart.destroy();
+  rpCardChart = new Chart(document.getElementById('rpCardChart'), chartCfg({
+    type:'bar',
+    data:{ labels:cardLabels, datasets:[{ label:'Card Fees', data:cardValues }] },
+    options:{ plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ label:(ctx)=> euro(ctx.raw) } } }, scales:{ y:{ beginAtZero:true } } }
+  }));
+  document.getElementById('rpCardTotal').textContent = euro(data.cards?.total || 0);
+}
+document.querySelectorAll('#revenuePanelCard .rp-btn[data-mode]').forEach(btn=>{
+  btn.addEventListener('click',()=>{ rpState.mode=btn.dataset.mode; setRpModeActive(btn); loadRevenuePanel(); });
+});
+document.getElementById('rpApply').addEventListener('click',()=>{ rpState.mode='custom'; setRpModeActive(null); loadRevenuePanel(); });
+document.querySelectorAll('.rp-plan-btn').forEach(btn=>btn.addEventListener('click',()=>togglePlan(btn)));
+
+/* ===== Unified top-row controls ===== */
+const topState = { mode:'month', start:null, end:null };
+function setTopActive(btn){ document.querySelectorAll('#topRowToolbar .tr-btn').forEach(b=>b.classList.remove('active')); if(btn) btn.classList.add('active'); }
+function calcTopRange(){
+  const today = new Date();
+  const end = today.toISOString().slice(0,10);
+  let start = end;
+  if (topState.mode==='day'){ start = end; }
+  else if (topState.mode==='week'){ const d=new Date(today); d.setDate(d.getDate()-13); start=d.toISOString().slice(0,10); }
+  else if (topState.mode==='month'){ const d=new Date(today); d.setDate(d.getDate()-27); start=d.toISOString().slice(0,10); }
+  else if (topState.mode==='year'){ const d=new Date(today); d.setFullYear(d.getFullYear()-1); start=d.toISOString().slice(0,10); }
+  else if (topState.mode==='since'){ start='2000-01-01'; }
+  else if (topState.mode==='custom'){ start=topState.start; }
+  return { start, end };
+}
+async function reloadTopRow(){
+  const r = calcTopRange();
+  auaState = { range:'custom', start:r.start, end:r.end };
+  await loadAua();
+  await loadSubsRed('custom', r.start, r.end);
+  await loadMetrics('custom', r.start, r.end);
+  await loadDiversification();
+}
+
+/* >>> Bind dei bottoni della toolbar in alto (TimeFrame + Custom Apply) <<< */
+document.querySelectorAll('#topRowToolbar .tr-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    topState.mode = btn.dataset.mode;   // day | week | month | year | since
+    setTopActive(btn);
+    await reloadTopRow();
+  });
+});
+document.getElementById('trApply').addEventListener('click', async () => {
+  topState.mode  = 'custom';
+  topState.start = document.getElementById('trStart').value || null;
+  topState.end   = document.getElementById('trEnd').value   || null;
+  setTopActive(null);                   // nessun preset attivo in custom
+  await reloadTopRow();
+});
+
+/* ===== INIT ===== */
+(async function init(){
+  const now=new Date();
+  const trE=document.getElementById('trEnd'), trS=document.getElementById('trStart');
+  trE.value = now.toISOString().slice(0,10);
+  const d=new Date(now); d.setDate(d.getDate()-27); trS.value=d.toISOString().slice(0,10);
+
+  usersBindControls();
+  await reloadTopRow();       // AUA + Subs/Red + Metrics + Diversification
+  await loadFundsUI();        // definito più sotto
+  await fetchReturns();
+  await loadDistributionTable();
+  await loadUsers();          // nuova lista Users (server-side)
+})();
+</script>
+
+<!-- ===== FUNDS localStorage ===== -->
+<script>
+const FUNDS_STORE_KEY='fund_returns_store_v1';
+function readFundsStore(){ try{ return JSON.parse(localStorage.getItem(FUNDS_STORE_KEY)||'{}'); }catch{ return {}; } }
+function writeFundsStore(obj){ localStorage.setItem(FUNDS_STORE_KEY, JSON.stringify(obj)); }
+function pctFmt(v){ return (v??0).toFixed(2); }
+function impliedWeeklyFromMonthly(monthlyPct){ const m=(parseFloat(monthlyPct)||0)/100; const w=Math.pow(1+m,1/4.345)-1; return w*100; }
+function trailingAvg(history, months){
+  if(!Array.isArray(history)||!history.length) return 0;
+  const byYm={}; history.forEach(h=>{ if(h&&h.ym) byYm[h.ym]=parseFloat(h.pct)||0; });
+  const ymStart=document.getElementById('fundsMonth').value || new Date().toISOString().slice(0,7);
+  const res=[]; let [y,m]=ymStart.split('-').map(Number);
+  for(let i=0;i<months;i++){ const key=`${y}-${String(m).padStart(2,'0')}`; if(key in byYm) res.push(byYm[key]); m-=1; if(m===0){ m=12; y-=1; } }
+  if(!res.length) return 0; return res.reduce((a,b)=>a+b,0)/res.length;
+}
+async function loadFundsUI(){
+  const monthEl=document.getElementById('fundsMonth'); if(!monthEl.value){ monthEl.value=new Date().toISOString().slice(0,7); }
+  monthEl.addEventListener('change', renderFundsTable);
+  const res=await fetch('/api/diversification?dimension=gp'); const data=await res.json();
+  const items=(data.items||[]).map(x=>({ fund:x.key, aum:x.value||0 })).sort((a,b)=>a.fund.localeCompare(b.fund));
+  window._fundsItems=items; renderFundsTable();
+  document.getElementById('fundsExport').addEventListener('click', exportFundsCSV);
+}
+function renderFundsTable(){
+  const tbody=document.querySelector('#fundsTbl tbody'); const store=readFundsStore();
+  const ymSel=document.getElementById('fundsMonth').value || new Date().toISOString().slice(0,7);
+  tbody.innerHTML=(window._fundsItems||[]).map(row=>{
+    const st=store[row.fund]||{history:[], last:0};
+    const monthlyForYm=(st.history.find(h=>h.ym===ymSel)?.pct) ?? st.last ?? 0;
+    const weekly=impliedWeeklyFromMonthly(monthlyForYm), ltm=trailingAvg(st.history,12), l18m=trailingAvg(st.history,18);
+    return `<tr data-fund="${encodeURIComponent(row.fund)}">
+      <td>${row.fund}</td><td>${euro(row.aum)}</td>
+      <td><input type="number" step="0.01" value="${pctFmt(monthlyForYm)}" class="fund-monthly"></td>
+      <td class="fund-weekly">${pctFmt(weekly)}</td>
+      <td class="fund-ltm">${pctFmt(ltm)}</td>
+      <td class="fund-l18m">${pctFmt(l18m)}</td>
+      <td><button type="button" class="aua-btn fund-save">Save</button></td>
+    </tr>`;
+  }).join('');
+  tbody.querySelectorAll('input.fund-monthly').forEach(inp=>inp.addEventListener('input',e=>{
+    const tr=e.target.closest('tr'); const val=parseFloat(e.target.value||'0'); tr.querySelector('.fund-weekly').textContent=pctFmt(impliedWeeklyFromMonthly(val));
+  }));
+  tbody.querySelectorAll('button.fund-save').forEach(btn=>btn.addEventListener('click',e=>{
+    const tr=e.target.closest('tr'); const fund=decodeURIComponent(tr.dataset.fund);
+    const val=parseFloat(tr.querySelector('input.fund-monthly').value||'0'); const ym=document.getElementById('fundsMonth').value||new Date().toISOString().slice(0,7);
+    const store=readFundsStore(); const cur=store[fund]||{history:[], last:0}; const idx=cur.history.findIndex(h=>h.ym===ym);
+    if(idx>=0) cur.history[idx].pct=val; else cur.history.push({ym, pct:val});
+    cur.last=val; cur.history.sort((a,b)=>(a.ym<b.ym?1:(a.ym>b.ym?-1:0))); store[fund]=cur; writeFundsStore(store);
+    tr.querySelector('.fund-weekly').textContent=pctFmt(impliedWeeklyFromMonthly(val));
+    tr.querySelector('.fund-ltm').textContent=pctFmt(trailingAvg(cur.history,12));
+    tr.querySelector('.fund-l18m').textContent=pctFmt(trailingAvg(cur.history,18));
+  }));
+}
+function exportFundsCSV(){
+  const ym=document.getElementById('fundsMonth').value || new Date().toISOString().slice(0,7); const store=readFundsStore();
+  const rows=(window._fundsItems||[]).map(i=>{
+    const st=store[i.fund]||{history:[], last:0}; const monthly=(st.history.find(h=>h.ym===ym)?.pct) ?? st.last ?? 0;
+    const weekly=impliedWeeklyFromMonthly(monthly); const ltm=trailingAvg(st.history,12); const l18m=trailingAvg(st.history,18);
+    return [`"${i.fund.replace(/"/g,'""')}"`, i.aum, monthly, weekly, ltm, l18m].join(',');
+  });
+  const header='Fund,AuM,Monthly %,Implied weekly %,LTM %,L18M %';
+  const blob=new Blob([[header].concat(rows).join('\n')],{type:'text/csv;charset=utf-8;'}); const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=`funds_${ym}.csv`; a.click(); URL.revokeObjectURL(url);
+}
+</script>
+
+<!-- ===== SOCKET ===== -->
+<script>
+const statusEl=document.getElementById('liveStatus'); const socket=io();
+socket.on('connect',()=>{ statusEl.innerHTML='Live: <strong>connected</strong>'; });
+socket.on('disconnect',()=>{ statusEl.innerHTML='Live: <strong style="color:#b91c1c">disconnected</strong>'; });
+socket.on('data-updated',async()=>{ await reloadTopRow(); });
+socket.on('returns-updated',async()=>{ await fetchReturns(); });
+socket.on('distribution-updated',async()=>{ await loadDistributionTable(); });
+socket.on('diversification-updated',async()=>{ await loadDiversification(); });
+</script>
+</body>
+</html>
